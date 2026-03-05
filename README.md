@@ -27,7 +27,7 @@ A production-grade Retrieval-Augmented Generation (RAG) system over financial do
 ## Project Structure
 
 ```
-companies-rag/
+companies-research-rag/
 ├── src/
 │   ├── ingestion/      # Document loading, chunking, ingestion pipeline
 │   ├── retrieval/      # Embeddings, vector store, hybrid search, query rewriting

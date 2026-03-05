@@ -72,7 +72,7 @@ EDGAR_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index?q={query}&dat
 EDGAR_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 EDGAR_FILING_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{filename}"
 
-HEADERS = {"User-Agent": "companies-rag-research contact@example.com"}
+HEADERS = {"User-Agent": "companies-research-rag contact@example.com"}
 
 
 def fetch_sec_filing(cik: int, accession_number: str) -> list[Document]:
