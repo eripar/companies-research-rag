@@ -7,12 +7,16 @@ Supports:
 - Plain text
 """
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 from typing import Iterator
 
 import httpx
 from langchain_core.documents import Document
+
+from src.config import settings
 
 
 # ---------------------------------------------------------------------------
@@ -72,43 +76,48 @@ EDGAR_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index?q={query}&dat
 EDGAR_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 EDGAR_FILING_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{filename}"
 
-HEADERS = {"User-Agent": "companies-research-rag contact@example.com"}
+def _edgar_headers() -> dict:
+    email = settings.sec_contact_email or "contact@example.com"
+    return {"User-Agent": f"companies-research-rag {email}"}
 
 
-def fetch_sec_filing(cik: int, accession_number: str) -> list[Document]:
+def fetch_sec_filing(cik: int, accession_number: str, primary_document: str | None = None) -> list[Document]:
     """
     Fetch a single SEC filing by CIK and accession number.
 
     Args:
         cik: Company CIK (int).
         accession_number: e.g. '0000950170-23-035122'
+        primary_document: filename of the primary document (e.g. 'crwd-20260131.htm').
+                          If not provided, falls back to scraping the index page.
 
     Returns:
         List of Documents (one per section/page).
     """
+    from bs4 import BeautifulSoup
+
     accession_nodash = accession_number.replace("-", "")
-    index_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{accession_nodash}-index.htm"
 
-    with httpx.Client(headers=HEADERS, follow_redirects=True) as client:
-        index_resp = client.get(index_url)
-        index_resp.raise_for_status()
+    with httpx.Client(headers=_edgar_headers(), follow_redirects=True) as client:
+        if primary_document:
+            filing_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{primary_document}"
+        else:
+            index_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{accession_nodash}-index.htm"
+            index_resp = client.get(index_url)
+            index_resp.raise_for_status()
+            soup = BeautifulSoup(index_resp.text, "html.parser")
+            doc_link = None
+            for row in soup.find_all("tr"):
+                cells = row.find_all("td")
+                if len(cells) >= 4 and "10-" in cells[3].get_text():
+                    doc_link = cells[2].find("a")
+                    break
+            if doc_link is None:
+                raise ValueError(f"Could not find primary document in {index_url}")
+            filing_url = f"https://www.sec.gov{doc_link['href']}"
 
-        # Find the primary document link
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(index_resp.text, "html.parser")
-        doc_link = None
-        for row in soup.find_all("tr"):
-            cells = row.find_all("td")
-            if len(cells) >= 4 and "10-" in cells[3].get_text():
-                doc_link = cells[2].find("a")
-                break
-        if doc_link is None:
-            raise ValueError(f"Could not find primary document in {index_url}")
-
-        filing_url = f"https://www.sec.gov{doc_link['href']}"
         filing_resp = client.get(filing_url)
         filing_resp.raise_for_status()
-
         text = BeautifulSoup(filing_resp.text, "html.parser").get_text(separator="\n")
         text = _clean_sec_text(text)
 
@@ -133,7 +142,7 @@ def iter_recent_filings(ticker: str, form_type: str = "10-K", limit: int = 5) ->
         limit: max number of filings to return
     """
     # Resolve ticker -> CIK
-    with httpx.Client(headers=HEADERS) as client:
+    with httpx.Client(headers=_edgar_headers()) as client:
         resp = client.get("https://www.sec.gov/files/company_tickers.json")
         resp.raise_for_status()
         tickers_data = resp.json()
@@ -146,7 +155,7 @@ def iter_recent_filings(ticker: str, form_type: str = "10-K", limit: int = 5) ->
     if cik is None:
         raise ValueError(f"Ticker {ticker!r} not found in EDGAR")
 
-    with httpx.Client(headers=HEADERS) as client:
+    with httpx.Client(headers=_edgar_headers()) as client:
         resp = client.get(EDGAR_SUBMISSIONS_URL.format(cik=int(cik)))
         resp.raise_for_status()
         submissions = resp.json()
@@ -161,6 +170,7 @@ def iter_recent_filings(ticker: str, form_type: str = "10-K", limit: int = 5) ->
                 "filing_date": filings["filingDate"][i],
                 "form_type": form,
                 "company": submissions.get("name", ticker),
+                "primary_document": filings.get("primaryDocument", [None])[i],
             }
             count += 1
 
