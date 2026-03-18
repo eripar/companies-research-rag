@@ -69,7 +69,7 @@ def ingest_sec(
     for filing_meta in iter_recent_filings(ticker, form_type=form_type, limit=limit):
         console.print(f"  Fetching {filing_meta['accession_number']} ({filing_meta['filing_date']})")
         try:
-            docs = fetch_sec_filing(filing_meta["cik"], filing_meta["accession_number"])
+            docs = fetch_sec_filing(filing_meta["cik"], filing_meta["accession_number"], filing_meta.get("primary_document"))
             for doc in docs:
                 doc.metadata.update(filing_meta)
             chunks = chunk_documents(docs, strategy=strategy)

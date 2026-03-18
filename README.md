@@ -41,19 +41,18 @@ companies-research-rag/
 
 ## Quickstart
 
+**Requirements:** Python 3.11+, Docker
+
 ```bash
-# Install dependencies
+# Install dependencies (use a Python 3.11 environment)
 pip install -e ".[dev]"
 
 # Set environment variables
 cp .env.example .env
-# Fill in ANTHROPIC_API_KEY, OPENAI_API_KEY, QDRANT_URL
+# Fill in ANTHROPIC_API_KEY, OPENAI_API_KEY, and SEC_CONTACT_EMAIL (your real email)
 
 # Start Qdrant locally (Docker)
 docker run -p 6333:6333 qdrant/qdrant
-
-# Ingest documents
-python -m src.ingestion.pipeline --data-dir data/raw/
 
 # Start API
 uvicorn src.api.main:app --reload
@@ -63,6 +62,29 @@ uvicorn src.api.main:app --reload
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/ingest` | Ingest documents from a directory |
-| `POST` | `/query` | Query the RAG pipeline |
 | `GET` | `/health` | Health check |
+| `POST` | `/ingest/local` | Ingest documents from a local directory |
+| `POST` | `/ingest/sec` | Fetch and ingest SEC filings from EDGAR by ticker |
+| `POST` | `/query` | Query the RAG pipeline |
+
+Interactive API docs available at `http://localhost:8000/docs` when running locally.
+
+### Example: Ingest a SEC filing
+
+```bash
+curl -X POST http://localhost:8000/ingest/sec \
+  -H "Content-Type: application/json" \
+  -d '{"ticker": "CRWD", "form_type": "10-K", "limit": 1}'
+```
+
+### Example: Query
+
+```bash
+curl -s -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are CrowdStrike'\''s main revenue streams?"}' | python3 -m json.tool
+```
+
+## SEC EDGAR Access
+
+No registration is required, but SEC EDGAR requires a valid email address in the `User-Agent` header. Set `SEC_CONTACT_EMAIL` in your `.env` to your real email — requests using placeholder emails may be blocked with a 503 error.
